@@ -1,0 +1,134 @@
+import {
+  Process,
+  Processor,
+  OnQueueActive,
+  OnQueueCompleted,
+  OnQueueFailed,
+} from '@nestjs/bull';
+import { Logger } from '@nestjs/common';
+import { Job } from 'bull';
+import { QUEUE_NAMES } from '../queue.constants';
+import { EmailJobData, QueueService } from '../queue.service';
+// import { SendGridService } from '../../sendgrid/sendgrid.service';
+// import { PrismaService } from '../../prisma/prisma.service';
+
+@Processor(QUEUE_NAMES.EMAIL)
+export class EmailWorkerProcessor {
+  private readonly logger = new Logger(EmailWorkerProcessor.name);
+
+  constructor(
+    // private readonly sendGridService: SendGridService,
+    // private readonly prisma: PrismaService,
+    private readonly queueService: QueueService,
+  ) {}
+
+  @Process({
+    concurrency: 5,
+  })
+  async processEmailJob(job: Job<EmailJobData>) {
+    const { jobId, customerId, to, subject, body, from } = job.data;
+
+    this.logger.log(
+      `Processing email job: ${jobId} (attempt ${job.attemptsMade + 1})`,
+    );
+
+    try {
+      // Step 1: Update job status to 'processing'
+      // await this.prisma.job.update({
+      //   where: { id: jobId },
+      //   data: {
+      //     status: 'processing',
+      //     startedAt: new Date(),
+      //     attempts: job.attemptsMade + 1,
+      //   },
+      // });
+
+      // Step 2: Send email via SendGrid
+      // const response = await this.sendGridService.sendEmail({
+      //   to,
+      //   subject,
+      //   body,
+      //   from: from || 'noreply@notifyhub.com',
+      // });
+
+      // TEMP: Mock success for now
+      await this.mockEmailSend();
+
+      // Step 3: Update job status to 'completed'
+      // await this.prisma.job.update({
+      //   where: { id: jobId },
+      //   data: {
+      //     status: 'completed',
+      //     completedAt: new Date(),
+      //   },
+      // });
+
+      // Step 4: Log delivery success
+      // await this.prisma.deliveryLog.create({
+      //   data: {
+      //     jobId,
+      //     attempt: job.attemptsMade + 1,
+      //     status: 'success',
+      //     response: response,
+      //   },
+      // });
+
+      this.logger.log(`Email sent successfully: ${jobId}`);
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Email job failed: ${jobId} - ${error.message}`);
+
+      // Log delivery failure
+      // await this.prisma.deliveryLog.create({
+      //   data: {
+      //     jobId,
+      //     attempt: job.attemptsMade + 1,
+      //     status: 'failed',
+      //     errorMessage: error.message,
+      //   },
+      // });
+
+      // If max attempts reached, move to DLQ
+      if (job.attemptsMade >= 2) {
+        // 3 total attempts (0, 1, 2)
+        await this.queueService.moveToDeadLetterQueue(job.data, error.message);
+
+        // Update job status to 'failed'
+        // await this.prisma.job.update({
+        //   where: { id: jobId },
+        //   data: {
+        //     status: 'failed',
+        //     errorMessage: error.message,
+        //   },
+        // });
+      }
+
+      throw error;
+    }
+  }
+
+  @OnQueueActive()
+  onActive(job: Job<EmailJobData>) {
+    this.logger.debug(`Processing job ${job.id} of type ${job.name}`);
+  }
+
+  @OnQueueCompleted()
+  onComplete(job: Job<EmailJobData>) {
+    this.logger.log(`Job ${job.id} completed successfully`);
+  }
+
+  @OnQueueFailed()
+  onError(job: Job<EmailJobData>, error: Error) {
+    this.logger.error(`Job ${job.id} failed with error: ${error.message}`);
+  }
+
+  // Mock function for testing
+  private async mockEmailSend(): Promise<void> {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        this.logger.debug('Mock email sent');
+        resolve();
+      }, 500);
+    });
+  }
+}
