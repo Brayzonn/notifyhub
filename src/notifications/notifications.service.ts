@@ -1,0 +1,314 @@
+import { Injectable, Logger, ConflictException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { QueueService } from '../queues/queue.service';
+import { QUEUE_PRIORITIES } from '../queues/queue.constants';
+import { SendEmailDto } from './dto/send-email.dto';
+import { SendWebhookDto } from './dto/send-webhook.dto';
+
+@Injectable()
+export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly queueService: QueueService,
+  ) {}
+
+  /**
+   * Create and queue an email notification job
+   */
+  async sendEmail(customerId: string, dto: SendEmailDto) {
+    if (dto.idempotencyKey) {
+      const existing = await this.prisma.job.findFirst({
+        where: {
+          customerId,
+          idempotencyKey: dto.idempotencyKey,
+        },
+      });
+
+      if (existing) {
+        this.logger.warn(`Duplicate email job detected: ${dto.idempotencyKey}`);
+        throw new ConflictException({
+          message: 'Duplicate request detected',
+          existingJobId: existing.id,
+        });
+      }
+    }
+
+    // Create job in database
+    const job = await this.prisma.job.create({
+      data: {
+        customerId,
+        type: 'email',
+        status: 'pending',
+        priority: dto.priority || QUEUE_PRIORITIES.NORMAL,
+        payload: {
+          to: dto.to,
+          subject: dto.subject,
+          body: dto.body,
+          from: dto.from,
+        },
+        idempotencyKey: dto.idempotencyKey,
+        attempts: 0,
+        maxAttempts: 3,
+      },
+    });
+
+    // Queue the job
+    await this.queueService.addEmailJob(
+      {
+        jobId: job.id,
+        customerId,
+        to: dto.to,
+        subject: dto.subject,
+        body: dto.body,
+        from: dto.from,
+      },
+      dto.priority || QUEUE_PRIORITIES.NORMAL,
+    );
+
+    // Increment customer usage count
+    await this.prisma.customer.update({
+      where: { id: customerId },
+      data: {
+        usageCount: {
+          increment: 1,
+        },
+      },
+    });
+
+    this.logger.log(`Email job created and queued: ${job.id}`);
+
+    return {
+      jobId: job.id,
+      status: 'queued',
+      type: 'email',
+      createdAt: job.createdAt,
+    };
+  }
+
+  /**
+   * Create and queue a webhook notification job
+   */
+  async sendWebhook(customerId: string, dto: SendWebhookDto) {
+    if (dto.idempotencyKey) {
+      const existing = await this.prisma.job.findFirst({
+        where: {
+          customerId,
+          idempotencyKey: dto.idempotencyKey,
+        },
+      });
+
+      if (existing) {
+        this.logger.warn(
+          `Duplicate webhook job detected: ${dto.idempotencyKey}`,
+        );
+        throw new ConflictException({
+          message: 'Duplicate request detected',
+          existingJobId: existing.id,
+        });
+      }
+    }
+
+    // Create job in database
+    const job = await this.prisma.job.create({
+      data: {
+        customerId,
+        type: 'webhook',
+        status: 'pending',
+        priority: dto.priority || QUEUE_PRIORITIES.NORMAL,
+        payload: {
+          url: dto.url,
+          method: dto.method || 'POST',
+          headers: dto.headers,
+          payload: dto.payload,
+        },
+        idempotencyKey: dto.idempotencyKey,
+        attempts: 0,
+        maxAttempts: 3,
+      },
+    });
+
+    // Queue the job
+    await this.queueService.addWebhookJob(
+      {
+        jobId: job.id,
+        customerId,
+        url: dto.url,
+        method: dto.method || 'POST',
+        headers: dto.headers,
+        payload: dto.payload,
+      },
+      dto.priority || QUEUE_PRIORITIES.NORMAL,
+    );
+
+    // Increment customer usage count
+    await this.prisma.customer.update({
+      where: { id: customerId },
+      data: {
+        usageCount: {
+          increment: 1,
+        },
+      },
+    });
+
+    this.logger.log(`Webhook job created and queued: ${job.id}`);
+
+    return {
+      jobId: job.id,
+      status: 'queued',
+      type: 'webhook',
+      createdAt: job.createdAt,
+    };
+  }
+
+  /**
+   * Get job status by ID
+   */
+  async getJobStatus(customerId: string, jobId: string) {
+    const job = await this.prisma.job.findFirst({
+      where: {
+        id: jobId,
+        customerId,
+      },
+      select: {
+        id: true,
+        type: true,
+        status: true,
+        priority: true,
+        payload: true,
+        attempts: true,
+        maxAttempts: true,
+        errorMessage: true,
+        createdAt: true,
+        startedAt: true,
+        completedAt: true,
+      },
+    });
+
+    if (!job) {
+      return null;
+    }
+
+    return job;
+  }
+
+  /**
+   * List jobs for a customer with pagination and filters
+   */
+  async listJobs(
+    customerId: string,
+    options: {
+      page?: number;
+      limit?: number;
+      type?: 'email' | 'webhook';
+      status?: 'pending' | 'processing' | 'completed' | 'failed';
+    } = {},
+  ) {
+    const page = options.page || 1;
+    const limit = Math.min(options.limit || 20, 100); // Max 100 per page
+    const skip = (page - 1) * limit;
+
+    const where = {
+      customerId,
+      ...(options.type && { type: options.type }),
+      ...(options.status && { status: options.status }),
+    };
+
+    const [jobs, total] = await Promise.all([
+      this.prisma.job.findMany({
+        where,
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          priority: true,
+          attempts: true,
+          errorMessage: true,
+          createdAt: true,
+          completedAt: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        skip,
+        take: limit,
+      }),
+      this.prisma.job.count({ where }),
+    ]);
+
+    return {
+      data: jobs,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Retry a failed job
+   */
+  async retryJob(customerId: string, jobId: string) {
+    const job = await this.prisma.job.findFirst({
+      where: {
+        id: jobId,
+        customerId,
+        status: 'failed',
+      },
+    });
+
+    if (!job) {
+      return null;
+    }
+
+    // Reset job status
+    await this.prisma.job.update({
+      where: { id: jobId },
+      data: {
+        status: 'pending',
+        attempts: 0,
+        errorMessage: null,
+      },
+    });
+
+    // Re-queue the job
+    if (job.type === 'email') {
+      const payload = job.payload as any;
+      await this.queueService.addEmailJob(
+        {
+          jobId: job.id,
+          customerId,
+          to: payload.to,
+          subject: payload.subject,
+          body: payload.body,
+          from: payload.from,
+        },
+        job.priority,
+      );
+    } else if (job.type === 'webhook') {
+      const payload = job.payload as any;
+      await this.queueService.addWebhookJob(
+        {
+          jobId: job.id,
+          customerId,
+          url: payload.url,
+          method: payload.method,
+          headers: payload.headers,
+          payload: payload.payload,
+        },
+        job.priority,
+      );
+    }
+
+    this.logger.log(`Job retried: ${jobId}`);
+
+    return {
+      jobId: job.id,
+      status: 'queued',
+      message: 'Job has been re-queued for processing',
+    };
+  }
+}
