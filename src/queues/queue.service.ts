@@ -1,7 +1,12 @@
-import { InjectQueue } from '@nestjs/bull';
 import { Injectable, Logger } from '@nestjs/common';
-import { Queue } from 'bull';
-import { QUEUE_NAMES, QueueType, QUEUE_PRIORITIES } from './queue.constants';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import {
+  QUEUE_NAMES,
+  QueueType,
+  JOB_NAMES,
+  QUEUE_PRIORITIES,
+} from './queue.constants';
 
 export interface EmailJobData {
   jobId: string;
@@ -42,7 +47,7 @@ export class QueueService {
     priority: number = QUEUE_PRIORITIES.NORMAL,
   ) {
     try {
-      const job = await this.emailQueue.add(data, {
+      const job = await this.emailQueue.add(JOB_NAMES.SEND_EMAIL, data, {
         jobId: data.jobId,
         priority,
         attempts: 3,
@@ -70,7 +75,7 @@ export class QueueService {
     priority: number = QUEUE_PRIORITIES.NORMAL,
   ) {
     try {
-      const job = await this.webhookQueue.add(data, {
+      const job = await this.webhookQueue.add(JOB_NAMES.SEND_WEBHOOK, data, {
         jobId: data.jobId,
         priority,
         attempts: 3,
@@ -99,6 +104,7 @@ export class QueueService {
   ) {
     try {
       await this.failedQueue.add(
+        JOB_NAMES.FAILED_JOB,
         {
           ...jobData,
           failedAt: new Date(),
@@ -181,7 +187,7 @@ export class QueueService {
   }
 
   /**
-   * Clear all jobs from a queue (useful for testing)
+   * Clear all jobs from a queue
    */
   async clearQueue(queueName: 'email' | 'webhook' | 'failed') {
     const queue =
@@ -191,7 +197,7 @@ export class QueueService {
           ? this.webhookQueue
           : this.failedQueue;
 
-    await queue.empty();
+    await queue.drain();
     this.logger.warn(`Queue cleared: ${queueName}`);
   }
 }

@@ -1,12 +1,6 @@
-import {
-  Process,
-  Processor,
-  OnQueueActive,
-  OnQueueCompleted,
-  OnQueueFailed,
-} from '@nestjs/bull';
+import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
-import { Job } from 'bull';
+import { Job } from 'bullmq';
 import { JobStatus, DeliveryStatus } from '@prisma/client';
 import { QUEUE_NAMES } from '../queue.constants';
 import { WebhookJobData, QueueService } from '../queue.service';
@@ -14,21 +8,22 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../../prisma/prisma.service';
 
-@Processor(QUEUE_NAMES.WEBHOOK)
-export class WebhookWorkerProcessor {
+@Processor(QUEUE_NAMES.WEBHOOK, {
+  concurrency: 5,
+})
+export class WebhookWorkerProcessor extends WorkerHost {
   private readonly logger = new Logger(WebhookWorkerProcessor.name);
 
   constructor(
     private readonly httpService: HttpService,
     private readonly prisma: PrismaService,
     private readonly queueService: QueueService,
-  ) {}
+  ) {
+    super();
+  }
 
-  @Process({
-    concurrency: 5,
-  })
-  async processWebhookJob(job: Job<WebhookJobData>) {
-    const { jobId, customerId, url, method, headers, payload } = job.data;
+  async process(job: Job<WebhookJobData>): Promise<any> {
+    const { jobId, url, method, headers, payload } = job.data;
 
     this.logger.log(
       `Processing webhook job: ${jobId} (attempt ${job.attemptsMade + 1})`,
@@ -54,7 +49,7 @@ export class WebhookWorkerProcessor {
             ...headers,
           },
           data: payload,
-          timeout: 30000, // 30 seconds
+          timeout: 30000,
           validateStatus: (status) => status >= 200 && status < 300,
         }),
       );
@@ -128,9 +123,6 @@ export class WebhookWorkerProcessor {
     }
   }
 
-  /**
-   * Determine if webhook should be retried based on error
-   */
   private shouldRetryWebhook(error: any): boolean {
     if (
       error.response &&
@@ -143,17 +135,17 @@ export class WebhookWorkerProcessor {
     return true;
   }
 
-  @OnQueueActive()
+  @OnWorkerEvent('active')
   onActive(job: Job<WebhookJobData>) {
     this.logger.debug(`Processing job ${job.id} of type ${job.name}`);
   }
 
-  @OnQueueCompleted()
+  @OnWorkerEvent('completed')
   onComplete(job: Job<WebhookJobData>) {
     this.logger.log(`Job ${job.id} completed successfully`);
   }
 
-  @OnQueueFailed()
+  @OnWorkerEvent('failed')
   onError(job: Job<WebhookJobData>, error: Error) {
     this.logger.error(`Job ${job.id} failed with error: ${error.message}`);
   }

@@ -74,7 +74,7 @@ export class ApiKeyGuard implements CanActivate {
    * Validate API key format (ntfy_xxxxx)
    */
   private isValidApiKeyFormat(apiKey: string): boolean {
-    return /^ntfy_[a-zA-Z0-9]{32,}$/.test(apiKey);
+    return apiKey.startsWith('ntfy_') && apiKey.length >= 37;
   }
 
   /**

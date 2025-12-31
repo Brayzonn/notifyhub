@@ -1,32 +1,25 @@
-import {
-  Process,
-  Processor,
-  OnQueueActive,
-  OnQueueCompleted,
-  OnQueueFailed,
-} from '@nestjs/bull';
+import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
+import { Job } from 'bullmq';
 import { Logger } from '@nestjs/common';
-import { Job } from 'bull';
 import { DeliveryStatus, JobStatus } from '@prisma/client';
 import { QUEUE_NAMES } from '../queue.constants';
 import { EmailJobData, QueueService } from '../queue.service';
 import { SendGridService } from '../../sendgrid/sendgrid.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
-@Processor(QUEUE_NAMES.EMAIL)
-export class EmailWorkerProcessor {
+@Processor(QUEUE_NAMES.EMAIL, { concurrency: 5 })
+export class EmailWorkerProcessor extends WorkerHost {
   private readonly logger = new Logger(EmailWorkerProcessor.name);
 
   constructor(
     private readonly sendGridService: SendGridService,
     private readonly prisma: PrismaService,
     private readonly queueService: QueueService,
-  ) {}
+  ) {
+    super();
+  }
 
-  @Process({
-    concurrency: 5,
-  })
-  async processEmailJob(job: Job<EmailJobData>) {
+  async process(job: Job<EmailJobData>): Promise<any> {
     const { jobId, customerId, to, subject, body, from } = job.data;
 
     this.logger.log(
@@ -97,17 +90,17 @@ export class EmailWorkerProcessor {
     }
   }
 
-  @OnQueueActive()
+  @OnWorkerEvent('active')
   onActive(job: Job<EmailJobData>) {
     this.logger.debug(`Processing job ${job.id} of type ${job.name}`);
   }
 
-  @OnQueueCompleted()
+  @OnWorkerEvent('completed')
   onComplete(job: Job<EmailJobData>) {
     this.logger.log(`Job ${job.id} completed successfully`);
   }
 
-  @OnQueueFailed()
+  @OnWorkerEvent('failed')
   onError(job: Job<EmailJobData>, error: Error) {
     this.logger.error(`Job ${job.id} failed with error: ${error.message}`);
   }

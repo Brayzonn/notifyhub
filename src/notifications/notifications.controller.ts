@@ -21,7 +21,7 @@ import {
 import { SendEmailDto } from './dto/send-email.dto';
 import { SendWebhookDto } from './dto/send-webhook.dto';
 
-@Controller('api/notifications')
+@Controller('notifications')
 @UseGuards(ApiKeyGuard, RateLimitGuard, QuotaGuard)
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}

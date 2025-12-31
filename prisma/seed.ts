@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { CustomerPlan, PrismaClient } from '@prisma/client';
 import { createHash } from 'crypto';
 
 const prisma = new PrismaClient();
@@ -14,7 +14,7 @@ async function main() {
       email: 'dev@notifyhub.local',
       apiKey: testApiKey,
       apiKeyHash: apiKeyHash,
-      plan: 'indie',
+      plan: CustomerPlan.INDIE,
       monthlyLimit: 10000,
     },
   });

@@ -7,6 +7,8 @@ import { LoggerMiddleware } from './common/middleware/activity-logger.middleware
 import { AppController } from '@/app.controller';
 import { HealthModule } from '@/health/health.module';
 import { RedisModule } from '@/redis/redis.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { QueueModule } from './queues/queue.module';
 
 @Module({
   imports: [
@@ -15,6 +17,8 @@ import { RedisModule } from '@/redis/redis.module';
     }),
     RedisModule,
     PrismaModule,
+    QueueModule,
+    NotificationsModule,
     HealthModule,
   ],
   controllers: [AppController],
