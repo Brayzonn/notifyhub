@@ -114,6 +114,12 @@ export class EmailWorkerProcessor extends WorkerHost {
     const fromDomain = requestedFrom.split('@')[1];
     const expectedDomain = `em.${customer.sendingDomain}`;
 
+    if (fromDomain === customer.sendingDomain && customer.domainVerified) {
+      throw new Error(
+        `Cannot send from ${requestedFrom}. Use em.${customer.sendingDomain} instead (e.g., support@em.${customer.sendingDomain})`,
+      );
+    }
+
     if (
       (fromDomain === expectedDomain ||
         fromDomain === customer.sendingDomain) &&
@@ -122,6 +128,15 @@ export class EmailWorkerProcessor extends WorkerHost {
       throw new Error(
         `Cannot send from ${requestedFrom}. Domain ${customer.sendingDomain} is not verified.`,
       );
+    }
+
+    //  Restrict NotifyHub domain to only verified addresses
+    if (fromDomain === 'notifyhub.com' || fromDomain === 'zoneyhub.com') {
+      if (requestedFrom !== this.defaultFromEmail) {
+        throw new Error(
+          `Cannot send from ${requestedFrom}. Only ${this.defaultFromEmail} is allowed for NotifyHub domain.`,
+        );
+      }
     }
 
     return requestedFrom;
