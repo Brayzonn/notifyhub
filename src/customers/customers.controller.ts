@@ -5,8 +5,11 @@ import {
   AuthenticatedCustomer,
 } from '../auth/decorators/current-customer.decorator';
 import { CustomersService } from './customers.service';
+import { IsNotEmpty, IsString } from 'class-validator';
 
 class RequestDomainDto {
+  @IsString()
+  @IsNotEmpty()
   domain: string;
 }
 
