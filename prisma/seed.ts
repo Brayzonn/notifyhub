@@ -9,7 +9,11 @@ async function main() {
 
   await prisma.customer.upsert({
     where: { email: 'dev@notifyhub.local' },
-    update: {},
+    update: {
+      plan: CustomerPlan.INDIE,
+      apiKey: testApiKey,
+      apiKeyHash: apiKeyHash,
+    },
     create: {
       email: 'dev@notifyhub.local',
       apiKey: testApiKey,

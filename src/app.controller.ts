@@ -1,13 +1,13 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, UseGuards } from '@nestjs/common';
+import { ApiKeyGuard } from './auth/guards/api-key.guard';
 
 @Controller('')
+@UseGuards(ApiKeyGuard)
 export class AppController {
   @Get('ping')
   ping() {
     return {
-      success: true,
-      message: 'NotifyHub API is running',
-      timestamp: new Date().toISOString(),
+      message: 'Pong',
     };
   }
 
@@ -19,8 +19,6 @@ export class AppController {
       description:
         'Notification infrastructure service for emails and webhooks',
       documentation: 'https://docs.notifyhub.com',
-      environment: process.env.NODE_ENV || 'development',
-      timestamp: new Date().toISOString(),
     };
   }
 }

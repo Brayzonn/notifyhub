@@ -5,6 +5,7 @@ import { QUEUE_PRIORITIES } from '../queues/queue.constants';
 import { SendEmailDto } from './dto/send-email.dto';
 import { SendWebhookDto } from './dto/send-webhook.dto';
 import { JobType, JobStatus } from '@prisma/client';
+import { toApiStatus } from '@/common/utils/enum.util';
 
 @Injectable()
 export class NotificationsService {
@@ -36,7 +37,6 @@ export class NotificationsService {
       }
     }
 
-    // Create job in database
     const job = await this.prisma.job.create({
       data: {
         customerId,
@@ -55,7 +55,6 @@ export class NotificationsService {
       },
     });
 
-    // Queue the job
     await this.queueService.addEmailJob(
       {
         jobId: job.id,
@@ -68,7 +67,6 @@ export class NotificationsService {
       dto.priority || QUEUE_PRIORITIES.NORMAL,
     );
 
-    // Increment customer usage count
     await this.prisma.customer.update({
       where: { id: customerId },
       data: {
@@ -82,8 +80,8 @@ export class NotificationsService {
 
     return {
       jobId: job.id,
-      status: 'queued',
-      type: 'email',
+      status: toApiStatus(job.status),
+      type: job.type.toLowerCase(),
       createdAt: job.createdAt,
     };
   }
@@ -111,7 +109,6 @@ export class NotificationsService {
       }
     }
 
-    // Create job in database
     const job = await this.prisma.job.create({
       data: {
         customerId,
@@ -130,7 +127,6 @@ export class NotificationsService {
       },
     });
 
-    // Queue the job
     await this.queueService.addWebhookJob(
       {
         jobId: job.id,
@@ -143,7 +139,6 @@ export class NotificationsService {
       dto.priority || QUEUE_PRIORITIES.NORMAL,
     );
 
-    // Increment customer usage count
     await this.prisma.customer.update({
       where: { id: customerId },
       data: {
@@ -157,8 +152,8 @@ export class NotificationsService {
 
     return {
       jobId: job.id,
-      status: 'queued',
-      type: 'webhook',
+      status: toApiStatus(job.status),
+      type: job.type.toLowerCase(),
       createdAt: job.createdAt,
     };
   }
@@ -191,7 +186,11 @@ export class NotificationsService {
       return null;
     }
 
-    return job;
+    return {
+      ...job,
+      status: toApiStatus(job.status),
+      type: job.type.toLowerCase(),
+    };
   }
 
   /**
@@ -207,7 +206,7 @@ export class NotificationsService {
     } = {},
   ) {
     const page = options.page || 1;
-    const limit = Math.min(options.limit || 20, 100); // Max 100 per page
+    const limit = Math.min(options.limit || 20, 100);
     const skip = (page - 1) * limit;
 
     const where = {
@@ -240,8 +239,14 @@ export class NotificationsService {
       this.prisma.job.count({ where }),
     ]);
 
+    const formattedJobs = jobs.map((job) => ({
+      ...job,
+      status: toApiStatus(job.status),
+      type: job.type.toLowerCase(),
+    }));
+
     return {
-      data: jobs,
+      data: formattedJobs,
       pagination: {
         page,
         limit,
@@ -267,7 +272,6 @@ export class NotificationsService {
       return null;
     }
 
-    // Reset job status
     await this.prisma.job.update({
       where: { id: jobId },
       data: {
@@ -277,7 +281,6 @@ export class NotificationsService {
       },
     });
 
-    // Re-queue the job
     if (job.type === JobType.EMAIL) {
       const payload = job.payload as any;
       await this.queueService.addEmailJob(
@@ -310,7 +313,7 @@ export class NotificationsService {
 
     return {
       jobId: job.id,
-      status: 'queued',
+      status: 'pending',
       message: 'Job has been re-queued for processing',
     };
   }
