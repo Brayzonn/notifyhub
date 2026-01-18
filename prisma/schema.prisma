@@ -11,6 +11,17 @@ datasource db {
 // ENUMS
 // ============================================
 
+enum UserRole {
+  ADMIN 
+  USER 
+}
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  GITHUB
+}
+
 enum CustomerPlan {
   FREE
   INDIE
@@ -33,6 +44,50 @@ enum DeliveryStatus {
   SUCCESS
   FAILED
 }
+
+// ============================================
+// USER MODEL 
+// ============================================
+model User {
+  id            String        @id @default(uuid()) @db.Uuid
+  email         String        @unique
+  password      String?
+  name          String
+  company       String?
+  role          UserRole      @default(USER)
+  emailVerified Boolean       @default(false) @map("email_verified")
+  
+  provider      AuthProvider  @default(EMAIL) 
+  providerId    String?       @map("provider_id")
+  
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  refreshTokens RefreshToken[]
+
+  @@unique([provider, providerId])
+  @@index([email])
+  @@map("users")
+}
+
+
+// ============================================
+// TOKEN MODELS
+// ============================================
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
 
 // ============================================
 // CUSTOMER MODEL 
@@ -64,6 +119,7 @@ model Customer {
   @@index([email])
   @@map("customers")
 }
+
 
 // ============================================
 // JOB MODEL
