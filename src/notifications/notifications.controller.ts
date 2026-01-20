@@ -20,7 +20,9 @@ import {
 } from '../auth/decorators/current-customer.decorator';
 import { SendEmailDto } from './dto/send-email.dto';
 import { SendWebhookDto } from './dto/send-webhook.dto';
+import { Public } from '@/auth/decorators/public.decorator';
 
+@Public()
 @Controller('notifications')
 @UseGuards(ApiKeyGuard, RateLimitGuard, QuotaGuard)
 export class NotificationsController {
