@@ -5,14 +5,11 @@ import {
   AuthenticatedCustomer,
 } from '../auth/decorators/current-customer.decorator';
 import { CustomersService } from './customers.service';
-import { IsNotEmpty, IsString } from 'class-validator';
 
-class RequestDomainDto {
-  @IsString()
-  @IsNotEmpty()
-  domain: string;
-}
+import { Public } from '@/auth/decorators/public.decorator';
+import { RequestDomainDto } from '@/customers/dto/customer.dto';
 
+@Public()
 @Controller('customers')
 @UseGuards(ApiKeyGuard)
 export class CustomersController {
