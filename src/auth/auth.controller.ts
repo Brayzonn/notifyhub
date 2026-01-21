@@ -34,7 +34,6 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   async signup(@Body() signupDto: SignupDto) {
     const result = await this.authService.signup(signupDto);
-
     return result;
   }
 

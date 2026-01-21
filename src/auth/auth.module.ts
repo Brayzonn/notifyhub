@@ -9,6 +9,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtStrategy } from './strategy/jwt.strategy';
 import { AuthService } from './auth.service';
 import { EmailModule } from '@/email/email.module';
+import { AuthController } from './auth.controller';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { EmailModule } from '@/email/email.module';
       inject: [ConfigService],
     }),
   ],
+  controllers: [AuthController],
   providers: [
     ApiKeyGuard,
     RateLimitGuard,
