@@ -265,7 +265,7 @@ export class AuthService {
   /**
    * Refresh access token
    */
-  async refreshToken(token: string): Promise<AuthTokens> {
+  async refreshToken(token: string): Promise<AuthResponse> {
     this.verifyRefreshToken(token);
 
     const storedToken = await this.prisma.refreshToken.findUnique({
@@ -294,7 +294,10 @@ export class AuthService {
       },
     });
 
-    return newTokens;
+    return {
+      user: this.sanitizeUser(storedToken.user),
+      tokens: newTokens,
+    };
   }
 
   /**

@@ -96,13 +96,14 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const cookieRefreshToken = request.cookies?.refreshToken;
-
     if (!cookieRefreshToken) {
       throw new UnauthorizedException('Refresh token not found');
     }
 
-    const { refreshToken, accessToken } =
-      await this.authService.refreshToken(cookieRefreshToken);
+    const {
+      user,
+      tokens: { accessToken, refreshToken },
+    } = await this.authService.refreshToken(cookieRefreshToken);
 
     response.cookie(
       'refreshToken',
@@ -110,7 +111,7 @@ export class AuthController {
       CookieConfig.getRefreshTokenOptions(this.configService),
     );
 
-    return { accessToken };
+    return { user, accessToken };
   }
 
   @Post('logout')
