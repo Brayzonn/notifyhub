@@ -178,19 +178,7 @@ export class AuthService {
       where: { email: verifyOtpDto.email },
     });
 
-    let user: {
-      id: string;
-      email: string;
-      password: string | null;
-      name: string;
-      company: string | null;
-      role: $Enums.UserRole;
-      emailVerified: boolean;
-      provider: $Enums.AuthProvider;
-      providerId: string | null;
-      createdAt: Date;
-      updatedAt: Date;
-    };
+    let user: User;
 
     if (existingUser) {
       user = await this.prisma.user.update({
