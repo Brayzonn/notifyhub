@@ -44,15 +44,18 @@ export class AuthController {
     @Body() signinDto: SigninDto,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const result = await this.authService.signin(signinDto);
+    const {
+      user,
+      tokens: { accessToken, refreshToken },
+    } = await this.authService.signin(signinDto);
 
     response.cookie(
       'refreshToken',
-      result.tokens.refreshToken,
+      refreshToken,
       CookieConfig.getRefreshTokenOptions(this.configService),
     );
 
-    return result;
+    return { user, accessToken };
   }
 
   @Public()
@@ -62,15 +65,18 @@ export class AuthController {
     @Body() verifyOtpDto: VerifyOtpDto,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const result = await this.authService.verifyOtp(verifyOtpDto);
+    const {
+      user,
+      tokens: { accessToken, refreshToken },
+    } = await this.authService.verifyOtp(verifyOtpDto);
 
     response.cookie(
       'refreshToken',
-      result.tokens.refreshToken,
+      refreshToken,
       CookieConfig.getRefreshTokenOptions(this.configService),
     );
 
-    return result;
+    return { user, accessToken };
   }
 
   @Public()
@@ -89,21 +95,22 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const refreshToken = request.cookies?.refreshToken;
+    const cookieRefreshToken = request.cookies?.refreshToken;
 
-    if (!refreshToken) {
+    if (!cookieRefreshToken) {
       throw new UnauthorizedException('Refresh token not found');
     }
 
-    const result = await this.authService.refreshToken(refreshToken);
+    const { refreshToken, accessToken } =
+      await this.authService.refreshToken(cookieRefreshToken);
 
     response.cookie(
       'refreshToken',
-      result.refreshToken,
+      refreshToken,
       CookieConfig.getRefreshTokenOptions(this.configService),
     );
 
-    return result;
+    return { accessToken };
   }
 
   @Post('logout')
