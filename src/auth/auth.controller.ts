@@ -48,10 +48,7 @@ export class AuthController {
   @Public()
   @Get('github/callback')
   @UseGuards(AuthGuard('github'))
-  async githubAuthCallback(
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
+  async githubAuthCallback(@Req() req: Request, @Res() res: Response) {
     const frontendUrl =
       this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3001';
 
@@ -67,9 +64,18 @@ export class AuthController {
         CookieConfig.getRefreshTokenOptions(this.configService),
       );
 
+      const payload = {
+        accessToken: tokens.accessToken,
+        user,
+      };
+
+      const encodedPayload = Buffer.from(JSON.stringify(payload)).toString(
+        'base64',
+      );
+
       return res.redirect(
         302,
-        `${frontendUrl}/auth/github/callback?token=${tokens.accessToken}&success=true`,
+        `${frontendUrl}/auth/github/callback?token=${encodedPayload}&success=true`,
       );
     } catch (error) {
       let errorMessage = 'Authentication failed';
