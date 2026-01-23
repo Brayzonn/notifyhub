@@ -17,7 +17,11 @@ import {
   JwtPayload,
 } from '@/auth/dto/auth.dto';
 import { User, AuthProvider, $Enums } from '@prisma/client';
-import { AuthResponse, AuthTokens } from '@/auth/interfaces/auth.interface';
+import {
+  AuthResponse,
+  AuthTokens,
+  GithubProfile,
+} from '@/auth/interfaces/auth.interface';
 import { RedisService } from '@/redis/redis.service';
 import { EmailService } from '@/email/email.service';
 
@@ -40,6 +44,59 @@ export class AuthService {
       'JWT_REFRESH_EXPIRES_IN',
       '7d',
     );
+  }
+
+  /**
+   * Sign In with GitHub OAuth
+   */
+  async validateGithubUser(profile: GithubProfile): Promise<AuthResponse> {
+    if (!profile.email) {
+      throw new UnauthorizedException(
+        'No public email found. Please make your email public on GitHub.',
+      );
+    }
+
+    let user = await this.prisma.user.findUnique({
+      where: { email: profile.email },
+    });
+
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          email: profile.email,
+          name: profile.name,
+          provider: AuthProvider.GITHUB,
+          providerId: profile.githubId,
+          emailVerified: true,
+          ...(profile.avatar && { avatar: profile.avatar }),
+        },
+      });
+    } else if (user.provider === AuthProvider.EMAIL) {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          provider: AuthProvider.GITHUB,
+          providerId: profile.githubId,
+          ...(profile.avatar && { avatar: profile.avatar }),
+          emailVerified: true,
+        },
+      });
+    }
+
+    const tokens = await this.generateTokens(user);
+
+    await this.prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        token: tokens.refreshToken,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      },
+    });
+
+    return {
+      user: this.sanitizeUser(user),
+      tokens,
+    };
   }
 
   /**
