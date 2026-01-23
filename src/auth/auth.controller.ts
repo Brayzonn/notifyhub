@@ -8,6 +8,7 @@ import {
   Req,
   UseGuards,
   UnauthorizedException,
+  Get,
 } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
@@ -20,7 +21,9 @@ import {
 import { AuthService } from '@/auth/auth.service';
 import { CookieConfig } from '@/config/cookie.config';
 import { ConfigService } from '@nestjs/config';
-import { Public } from './decorators/public.decorator';
+import { Public } from '@/auth/decorators/public.decorator';
+import { AuthGuard } from '@nestjs/passport';
+import { GithubProfile } from '@/auth/interfaces/auth.interface';
 
 @Controller('auth')
 export class AuthController {
@@ -35,6 +38,50 @@ export class AuthController {
   async signup(@Body() signupDto: SignupDto) {
     const result = await this.authService.signup(signupDto);
     return result;
+  }
+
+  @Public()
+  @Get('github')
+  @UseGuards(AuthGuard('github'))
+  async githubAuth() {}
+
+  @Public()
+  @Get('github/callback')
+  @UseGuards(AuthGuard('github'))
+  async githubAuthCallback(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3001';
+
+    try {
+      const githubUser = req.user as GithubProfile;
+
+      const { user, tokens } =
+        await this.authService.validateGithubUser(githubUser);
+
+      res.cookie(
+        'refreshToken',
+        tokens.refreshToken,
+        CookieConfig.getRefreshTokenOptions(this.configService),
+      );
+
+      return res.redirect(
+        302,
+        `${frontendUrl}/auth/github/callback?token=${tokens.accessToken}&success=true`,
+      );
+    } catch (error) {
+      let errorMessage = 'Authentication failed';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+
+      return res.redirect(
+        302,
+        `${frontendUrl}/auth/github/callback?success=false&error=${encodeURIComponent(errorMessage)}`,
+      );
+    }
   }
 
   @Public()
