@@ -64,6 +64,7 @@ model User {
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
   refreshTokens RefreshToken[]
+  customer      Customer? 
 
   @@unique([provider, providerId])
   @@index([email])
@@ -96,6 +97,7 @@ model RefreshToken {
 
 model Customer {
   id            String       @id @default(uuid()) @db.Uuid
+  userId        String       @unique @map("user_id") @db.Uuid
   email         String       @unique
   apiKey        String       @unique @map("api_key")
   apiKeyHash    String       @unique @map("api_key_hash")
@@ -114,10 +116,12 @@ model Customer {
   domainRequestedAt DateTime? @map("domain_requested_at")
   domainVerifiedAt  DateTime? @map("domain_verified_at")
 
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   jobs          Job[]
 
   @@index([apiKeyHash])
   @@index([email])
+  @@index([userId])
   @@map("customers")
 }
 
