@@ -22,6 +22,7 @@ import {
   AuthResponse,
   AuthTokens,
   GithubProfile,
+  RefreshTokenResponse,
 } from '@/auth/interfaces/auth.interface';
 import { RedisService } from '@/redis/redis.service';
 import { EmailService } from '@/email/email.service';
@@ -96,13 +97,7 @@ export class AuthService {
 
     const tokens = await this.generateTokens(user);
 
-    await this.prisma.refreshToken.create({
-      data: {
-        userId: user.id,
-        token: tokens.refreshToken,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      },
-    });
+    await this.createRefreshTokenWithLimit(user.id, tokens.refreshToken);
 
     return {
       user: this.sanitizeUser(user),
@@ -183,35 +178,9 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const activeTokens = await this.prisma.refreshToken.count({
-      where: {
-        userId: user.id,
-        expiresAt: { gt: new Date() },
-      },
-    });
-
-    if (activeTokens >= this.MAX_ACTIVE_SESSIONS) {
-      const oldestToken = await this.prisma.refreshToken.findFirst({
-        where: { userId: user.id },
-        orderBy: { createdAt: 'asc' },
-      });
-
-      if (oldestToken) {
-        await this.prisma.refreshToken.delete({
-          where: { id: oldestToken.id },
-        });
-      }
-    }
-
     const tokens = await this.generateTokens(user);
 
-    await this.prisma.refreshToken.create({
-      data: {
-        userId: user.id,
-        token: tokens.refreshToken,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-      },
-    });
+    await this.createRefreshTokenWithLimit(user.id, tokens.refreshToken);
 
     return {
       user: this.sanitizeUser(user),
@@ -285,13 +254,7 @@ export class AuthService {
 
     const tokens = await this.generateTokens(user);
 
-    await this.prisma.refreshToken.create({
-      data: {
-        userId: user.id,
-        token: tokens.refreshToken,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      },
-    });
+    await this.createRefreshTokenWithLimit(user.id, tokens.refreshToken);
 
     return {
       user: this.sanitizeUser(user),
@@ -343,38 +306,26 @@ export class AuthService {
   /**
    * Refresh access token
    */
-  async refreshToken(token: string): Promise<AuthResponse> {
+  async refreshToken(token: string): Promise<RefreshTokenResponse> {
     this.verifyRefreshToken(token);
 
-    const storedToken = await this.prisma.refreshToken.findUnique({
-      where: { token },
-      include: { user: true },
-    });
+    const storedToken = await this.validateStoredRefreshToken(token);
+    const isExpiringSoon = this.isTokenExpiringSoon(storedToken.expiresAt);
 
-    if (!storedToken) {
-      throw new UnauthorizedException('Refresh token not found');
+    if (isExpiringSoon) {
+      const newTokens = await this.rotateRefreshToken(storedToken);
+
+      return {
+        user: this.sanitizeUser(storedToken.user),
+        tokens: newTokens,
+      };
     }
 
-    if (storedToken.expiresAt < new Date()) {
-      await this.prisma.refreshToken.delete({ where: { id: storedToken.id } });
-      throw new UnauthorizedException('Refresh token expired');
-    }
-
-    const newTokens = await this.generateTokens(storedToken.user);
-
-    await this.prisma.refreshToken.delete({ where: { id: storedToken.id } });
-
-    await this.prisma.refreshToken.create({
-      data: {
-        userId: storedToken.user.id,
-        token: newTokens.refreshToken,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      },
-    });
+    const { accessToken } = await this.generateTokens(storedToken.user);
 
     return {
       user: this.sanitizeUser(storedToken.user),
-      tokens: newTokens,
+      tokens: { accessToken },
     };
   }
 
@@ -395,6 +346,145 @@ export class AuthService {
    * HELPERS
    * ══════════════════════════════════════════════════════════════════════
    */
+
+  /**
+   * ═══════════════════════════════
+   * REFRESH TOKEN HELPERS
+   * ═══════════════════════════════
+   */
+
+  /**
+   * Validate and retrieve stored refresh token
+   */
+  private async validateStoredRefreshToken(token: string) {
+    const storedToken = await this.prisma.refreshToken.findUnique({
+      where: { token },
+      include: { user: true },
+    });
+
+    if (!storedToken) {
+      throw new UnauthorizedException('Refresh token not found');
+    }
+
+    if (storedToken.expiresAt < new Date()) {
+      await this.prisma.refreshToken.delete({ where: { id: storedToken.id } });
+      throw new UnauthorizedException('Refresh token expired');
+    }
+
+    return storedToken;
+  }
+
+  /**
+   * Check if token is expiring soon (less than 1 day)
+   */
+  private isTokenExpiringSoon(expiresAt: Date): boolean {
+    const oneDayFromNow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    return expiresAt < oneDayFromNow;
+  }
+
+  /**
+   * Rotate expiring refresh token and generate new tokens
+   */
+  private async rotateRefreshToken(storedToken: any): Promise<AuthTokens> {
+    const newTokens = await this.generateTokens(storedToken.user);
+
+    await this.prisma.refreshToken.delete({ where: { id: storedToken.id } });
+
+    await this.createRefreshTokenWithLimit(
+      storedToken.user.id,
+      newTokens.refreshToken,
+    );
+
+    return newTokens;
+  }
+
+  /**
+   *  Create refresh token with session limit enforcement
+   */
+  private async createRefreshTokenWithLimit(
+    userId: string,
+    refreshToken: string,
+  ): Promise<void> {
+    await this.prisma.refreshToken.deleteMany({
+      where: {
+        userId,
+        expiresAt: { lt: new Date() },
+      },
+    });
+
+    const activeTokens = await this.prisma.refreshToken.count({
+      where: {
+        userId,
+        expiresAt: { gt: new Date() },
+      },
+    });
+
+    const tokensToDelete =
+      activeTokens >= this.MAX_ACTIVE_SESSIONS
+        ? activeTokens - this.MAX_ACTIVE_SESSIONS + 1
+        : 0;
+
+    if (tokensToDelete > 0) {
+      const oldestTokens = await this.prisma.refreshToken.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'asc' },
+        take: tokensToDelete,
+        select: { id: true },
+      });
+
+      await this.prisma.refreshToken.deleteMany({
+        where: {
+          id: { in: oldestTokens.map((t) => t.id) },
+        },
+      });
+
+      this.logger.log(
+        `Deleted ${tokensToDelete} oldest refresh token(s) for user: ${userId}`,
+      );
+    }
+
+    await this.prisma.refreshToken.create({
+      data: {
+        userId,
+        token: refreshToken,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      },
+    });
+  }
+
+  /**
+   * Verify refresh tokens
+   */
+  private verifyRefreshToken(token: string): JwtPayload {
+    try {
+      return this.jwtService.verify(token, {
+        secret: this.JWT_REFRESH_SECRET,
+      });
+    } catch (error) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+  }
+
+  /**
+   * Generate access and refresh tokens
+   */
+
+  private async generateTokens(user: User): Promise<AuthTokens> {
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    };
+
+    const accessToken = this.jwtService.sign(payload);
+
+    const refreshToken = this.jwtService.sign(payload, {
+      secret: this.configService.get('JWT_REFRESH_SECRET'),
+      expiresIn: this.configService.get('JWT_REFRESH_EXPIRES_IN', '7d'),
+    });
+
+    return { accessToken, refreshToken };
+  }
 
   /**
    * Create customer record for new user
@@ -438,40 +528,6 @@ export class AuthService {
   private generateApiKey(): string {
     const randomBytes = crypto.randomBytes(32);
     return `nh_${randomBytes.toString('hex')}`;
-  }
-
-  /**
-   * Verify refresh tokens
-   */
-  private verifyRefreshToken(token: string): JwtPayload {
-    try {
-      return this.jwtService.verify(token, {
-        secret: this.JWT_REFRESH_SECRET,
-      });
-    } catch (error) {
-      throw new UnauthorizedException('Invalid or expired refresh token');
-    }
-  }
-
-  /**
-   * Generate access and refresh tokens
-   */
-
-  private async generateTokens(user: User): Promise<AuthTokens> {
-    const payload = {
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-    };
-
-    const accessToken = this.jwtService.sign(payload);
-
-    const refreshToken = this.jwtService.sign(payload, {
-      secret: this.configService.get('JWT_REFRESH_SECRET'),
-      expiresIn: this.configService.get('JWT_REFRESH_EXPIRES_IN', '7d'),
-    });
-
-    return { accessToken, refreshToken };
   }
 
   /**

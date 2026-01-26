@@ -24,6 +24,7 @@ import { ConfigService } from '@nestjs/config';
 import { Public } from '@/auth/decorators/public.decorator';
 import { AuthGuard } from '@nestjs/passport';
 import { GithubProfile } from '@/auth/interfaces/auth.interface';
+import { access } from 'fs';
 
 @Controller('auth')
 export class AuthController {
@@ -153,18 +154,18 @@ export class AuthController {
       throw new UnauthorizedException('Refresh token not found');
     }
 
-    const {
-      user,
-      tokens: { accessToken, refreshToken },
-    } = await this.authService.refreshToken(cookieRefreshToken);
+    const { user, tokens } =
+      await this.authService.refreshToken(cookieRefreshToken);
 
-    response.cookie(
-      'refreshToken',
-      refreshToken,
-      CookieConfig.getRefreshTokenOptions(this.configService),
-    );
+    if (tokens.refreshToken) {
+      response.cookie(
+        'refreshToken',
+        tokens.refreshToken,
+        CookieConfig.getRefreshTokenOptions(this.configService),
+      );
+    }
 
-    return { user, accessToken };
+    return { user, accessToken: tokens.accessToken };
   }
 
   @Post('logout')
