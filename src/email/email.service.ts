@@ -2,12 +2,20 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import sgMail from '@sendgrid/mail';
 import {
+  EmailChangeCancelledData,
+  EmailChangeConfirmationData,
+  EmailChangeSuccessData,
+  EmailChangeVerificationData,
   OtpEmailData,
   WelcomeEmailData,
 } from '@/email/interfaces/email.interface';
 import { otpEmailTemplate } from '@/email/templates/otp.template';
 import { welcomeEmailTemplate } from '@/email/templates/welcome.template';
 import { passwordResetEmailTemplate } from '@/email/templates/password-reset.template';
+import { emailChangeVerificationTemplate } from '@/email/templates/email-change-verification.template';
+import { emailChangeConfirmationTemplate } from '@/email/templates/email-change-confirmation.template';
+import { emailChangeCancelledTemplate } from '@/email/templates/email-change-cancelled.template';
+import { emailChangeSuccessTemplate } from '@/email/templates/email-change-success.template';
 
 @Injectable()
 export class EmailService {
@@ -75,5 +83,71 @@ export class EmailService {
     });
 
     this.logger.log(`Password reset email sent to ${email}`);
+  }
+
+  async sendEmailChangeVerification(
+    data: EmailChangeVerificationData,
+  ): Promise<void> {
+    const html = emailChangeVerificationTemplate(data.name, data.verifyLink);
+
+    await sgMail.send({
+      to: data.email,
+      from: this.fromEmail,
+      subject: 'Verify Your New Email Address - NotifyHub',
+      html,
+    });
+
+    this.logger.log(`Email change verification sent to ${data.email}`);
+  }
+
+  async sendEmailChangeConfirmation(
+    data: EmailChangeConfirmationData,
+  ): Promise<void> {
+    const html = emailChangeConfirmationTemplate(
+      data.name,
+      data.email,
+      data.newEmail,
+      data.confirmLink,
+      data.cancelLink,
+    );
+
+    await sgMail.send({
+      to: data.email,
+      from: this.fromEmail,
+      subject: 'Confirm Email Change Request - NotifyHub',
+      html,
+    });
+
+    this.logger.log(`Email change confirmation sent to ${data.email}`);
+  }
+
+  async sendEmailChangeCancelled(
+    data: EmailChangeCancelledData,
+  ): Promise<void> {
+    const html = emailChangeCancelledTemplate(data.email, data.newEmail);
+
+    await sgMail.send({
+      to: data.email,
+      from: this.fromEmail,
+      subject: 'Email Change Cancelled - NotifyHub',
+      html,
+    });
+
+    this.logger.log(
+      `Email change cancelled notification sent to ${data.email}`,
+    );
+  }
+
+  async sendEmailChangeSuccess(data: EmailChangeSuccessData): Promise<void> {
+    const html = emailChangeSuccessTemplate(data.email);
+
+    await sgMail.send({
+      to: data.email,
+      from: this.fromEmail,
+      subject: 'Email Updated Successfully - NotifyHub',
+      html,
+    });
+
+    this.logger.log(`Email change success notification sent to ${data.email}`);
   }
 }
