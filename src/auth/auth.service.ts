@@ -62,9 +62,6 @@ export class AuthService {
       where: { email: profile.email },
     });
 
-    let isNewUser = false;
-    let apiKey: string | undefined;
-
     if (!user) {
       user = await this.prisma.user.create({
         data: {
@@ -76,8 +73,6 @@ export class AuthService {
           ...(profile.avatar && { avatar: profile.avatar }),
         },
       });
-
-      isNewUser = true;
     } else if (user.provider === AuthProvider.EMAIL) {
       user = await this.prisma.user.update({
         where: { id: user.id },
@@ -90,10 +85,7 @@ export class AuthService {
       });
     }
 
-    if (isNewUser) {
-      const { apiKey: newApiKey } = await this.createCustomerForUser(user);
-      apiKey = newApiKey;
-    }
+    await this.createCustomerForUser(user);
 
     const tokens = await this.generateTokens(user);
 
@@ -102,7 +94,6 @@ export class AuthService {
     return {
       user: this.sanitizeUser(user),
       tokens,
-      ...(apiKey && { apiKey }),
     };
   }
 
@@ -218,7 +209,6 @@ export class AuthService {
 
     let user: User;
     let isNewUser = false;
-    let apiKey: string | undefined;
 
     if (existingUser) {
       user = await this.prisma.user.update({
@@ -244,10 +234,7 @@ export class AuthService {
       isNewUser = true;
     }
 
-    if (isNewUser) {
-      const { apiKey: newApiKey } = await this.createCustomerForUser(user);
-      apiKey = newApiKey;
-    }
+    await this.createCustomerForUser(user);
 
     await this.redis.del(`otp:${verifyOtpDto.email}`);
     await this.redis.del(`signup:${verifyOtpDto.email}`);
@@ -259,7 +246,6 @@ export class AuthService {
     return {
       user: this.sanitizeUser(user),
       tokens,
-      ...(apiKey && { apiKey }),
     };
   }
 
@@ -491,24 +477,21 @@ export class AuthService {
    */
   private async createCustomerForUser(
     user: User,
-  ): Promise<{ customer: Customer; apiKey: string }> {
+  ): Promise<{ customer: Customer }> {
     const existingCustomer = await this.prisma.customer.findUnique({
       where: { userId: user.id },
     });
 
     if (existingCustomer) {
-      return { customer: existingCustomer, apiKey: existingCustomer.apiKey };
+      return { customer: existingCustomer };
     }
-
-    const apiKey = this.generateApiKey();
-    const apiKeyHash = await argon2.hash(apiKey);
 
     const customer = await this.prisma.customer.create({
       data: {
         userId: user.id,
         email: user.email,
-        apiKey,
-        apiKeyHash,
+        apiKey: '',
+        apiKeyHash: '',
         plan: CustomerPlan.FREE,
         monthlyLimit: 1000,
         usageCount: 0,
@@ -517,9 +500,7 @@ export class AuthService {
       },
     });
 
-    this.logger.log(`Customer created for user: ${user.id}`);
-
-    return { customer, apiKey };
+    return { customer };
   }
 
   /**

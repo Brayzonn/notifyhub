@@ -129,7 +129,7 @@ export class UserController {
     return await this.userService.getApiKey(user.id);
   }
 
-  @Post('api-key/regenerate')
+  @Post('api-key/generate')
   @HttpCode(HttpStatus.OK)
   async regenerateApiKey(
     @User() user: AuthenticatedUser,

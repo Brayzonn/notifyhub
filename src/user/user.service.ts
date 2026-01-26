@@ -515,7 +515,7 @@ export class UserService {
 
     return {
       apiKey: newApiKey,
-      message: 'API key regenerated successfully. Save it securely.',
+      message: 'API key generated successfully. Save it securely.',
     };
   }
 
