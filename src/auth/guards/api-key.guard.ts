@@ -3,6 +3,7 @@ import {
   CanActivate,
   ExecutionContext,
   UnauthorizedException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { Request } from 'express';
@@ -27,7 +28,7 @@ export class ApiKeyGuard implements CanActivate {
       throw new UnauthorizedException('Invalid API key format');
     }
 
-    const apiKeyHash = this.hashApiKey(apiKey);
+    const apiKeyHash = crypto.createHash('sha256').update(apiKey).digest('hex');
 
     const customer = await this.prisma.customer.findUnique({
       where: { apiKeyHash },
@@ -38,23 +39,62 @@ export class ApiKeyGuard implements CanActivate {
         monthlyLimit: true,
         usageCount: true,
         usageResetAt: true,
+        isActive: true,
+        user: {
+          select: {
+            id: true,
+            deletedAt: true,
+          },
+        },
       },
     });
 
     if (!customer) {
-      this.logger.warn(`Invalid API key attempt: ${apiKey.substring(0, 8)}...`);
+      this.logger.warn(
+        `Invalid API key attempt: ${apiKey.substring(0, 11)}...`,
+      );
       throw new UnauthorizedException('Invalid API key');
     }
 
-    request['customer'] = customer;
+    if (customer.user.deletedAt) {
+      this.logger.warn(`Deleted user attempted API access: ${customer.email}`);
+      throw new ForbiddenException('Account has been deleted');
+    }
 
-    this.logger.debug(`Authenticated customer: ${customer.email}`);
+    if (!customer.isActive) {
+      this.logger.warn(
+        `Inactive customer attempted API access: ${customer.email}`,
+      );
+      throw new ForbiddenException('Account is inactive');
+    }
+
+    if (customer.usageCount >= customer.monthlyLimit) {
+      throw new ForbiddenException(
+        `Monthly usage limit exceeded (${customer.usageCount}/${customer.monthlyLimit}). Upgrade your plan or wait for reset on ${customer.usageResetAt.toLocaleDateString()}.`,
+      );
+    }
+
+    const now = new Date();
+    if (customer.usageResetAt < now) {
+      await this.resetMonthlyUsage(customer.id);
+      customer.usageCount = 0;
+      customer.usageResetAt = this.getNextResetDate();
+      this.logger.log(`Reset monthly usage for customer: ${customer.email}`);
+    }
+
+    // Attach customer to request
+    request['customer'] = {
+      id: customer.id,
+      email: customer.email,
+      plan: customer.plan,
+      monthlyLimit: customer.monthlyLimit,
+      usageCount: customer.usageCount,
+      usageResetAt: customer.usageResetAt,
+    };
+
     return true;
   }
 
-  /**
-   * Extract API key from request headers
-   */
   private extractApiKey(request: Request): string | null {
     const authHeader = request.headers['authorization'];
     const apiKeyHeader = request.headers['x-api-key'] as string;
@@ -70,17 +110,25 @@ export class ApiKeyGuard implements CanActivate {
     return null;
   }
 
-  /**
-   * Validate API key format (ntfy_xxxxx)
-   */
   private isValidApiKeyFormat(apiKey: string): boolean {
-    return apiKey.startsWith('ntfy_') && apiKey.length >= 37;
+    return apiKey.startsWith('nh_') && apiKey.length === 67; // nh_ + 64 hex chars
   }
 
-  /**
-   * Hash API key using SHA256
-   */
-  private hashApiKey(apiKey: string): string {
-    return crypto.createHash('sha256').update(apiKey).digest('hex');
+  private async resetMonthlyUsage(customerId: string): Promise<void> {
+    const nextResetDate = this.getNextResetDate();
+
+    await this.prisma.customer.update({
+      where: { id: customerId },
+      data: {
+        usageCount: 0,
+        usageResetAt: nextResetDate,
+      },
+    });
+  }
+
+  private getNextResetDate(): Date {
+    const now = new Date();
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return nextMonth;
   }
 }
