@@ -99,8 +99,8 @@ model Customer {
   id            String       @id @default(uuid()) @db.Uuid
   userId        String       @unique @map("user_id") @db.Uuid
   email         String       @unique
-  apiKey        String       @unique @map("api_key")
-  apiKeyHash    String       @unique @map("api_key_hash")
+  apiKey        String?       @unique @map("api_key")
+  apiKeyHash    String?       @unique @map("api_key_hash")
   plan          CustomerPlan @default(FREE)              
   monthlyLimit  Int          @default(1000) @map("monthly_limit")
   usageCount    Int          @default(0) @map("usage_count")
