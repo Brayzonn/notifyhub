@@ -3,10 +3,10 @@ import { Job } from 'bullmq';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DeliveryStatus, JobStatus } from '@prisma/client';
-import { QUEUE_NAMES } from '../queue.constants';
-import { EmailJobData, QueueService } from '../queue.service';
-import { SendGridService } from '../../sendgrid/sendgrid.service';
-import { PrismaService } from '../../prisma/prisma.service';
+import { QUEUE_NAMES } from '@/queues/queue.constants';
+import { EmailJobData, QueueService } from '@/queues/queue.service';
+import { SendGridService } from '@/sendgrid/sendgrid.service';
+import { PrismaService } from '@/prisma/prisma.service';
 
 @Processor(QUEUE_NAMES.EMAIL, { concurrency: 5 })
 export class EmailWorkerProcessor extends WorkerHost {
