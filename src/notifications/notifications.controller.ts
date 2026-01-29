@@ -10,21 +10,21 @@ import {
   HttpStatus,
   NotFoundException,
 } from '@nestjs/common';
-import { NotificationsService } from './notifications.service';
-import { ApiKeyGuard } from '../auth/guards/api-key.guard';
-import { RateLimitGuard } from '../auth/guards/rate-limit.guard';
-import { QuotaGuard } from '../auth/guards/quota.guard';
+import { NotificationsService } from '@/notifications/notifications.service';
+import { ApiKeyGuard } from '@/auth/guards/api-key.guard';
+import { CustomerRateLimitGuard } from '@/auth/guards/customer-rate-limit.guard';
+import { QuotaGuard } from '@/auth/guards/quota.guard';
 import {
   CurrentCustomer,
   AuthenticatedCustomer,
-} from '../auth/decorators/current-customer.decorator';
-import { SendEmailDto } from './dto/send-email.dto';
-import { SendWebhookDto } from './dto/send-webhook.dto';
+} from '@/auth/decorators/current-customer.decorator';
+import { SendEmailDto } from '@/notifications/dto/send-email.dto';
+import { SendWebhookDto } from '@/notifications/dto/send-webhook.dto';
 import { Public } from '@/auth/decorators/public.decorator';
 
 @Public()
 @Controller('notifications')
-@UseGuards(ApiKeyGuard, RateLimitGuard, QuotaGuard)
+@UseGuards(ApiKeyGuard, CustomerRateLimitGuard, QuotaGuard)
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
