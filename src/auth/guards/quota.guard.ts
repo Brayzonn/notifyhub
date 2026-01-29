@@ -5,15 +5,17 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Request } from 'express';
-import { PrismaService } from '../../prisma/prisma.service';
+import { PrismaService } from '@/prisma/prisma.service';
+import { CustomerPlan } from '@prisma/client';
 
 interface CustomerRequest extends Request {
   customer: {
     id: string;
     email: string;
-    plan: string;
+    plan: CustomerPlan;
     monthlyLimit: number;
     usageCount: number;
     usageResetAt: Date;
@@ -37,32 +39,36 @@ export class QuotaGuard implements CanActivate {
       );
     }
 
-    // Check if usage period needs reset
     const now = new Date();
-    if (now > customer.usageResetAt) {
-      await this.resetUsage(customer.id);
+    if (customer.usageResetAt < now) {
+      await this.resetMonthlyUsage(customer.id);
       customer.usageCount = 0;
       customer.usageResetAt = this.getNextResetDate();
+      this.logger.log(`Reset monthly usage for customer: ${customer.email}`);
     }
 
-    // Check if quota exceeded
     if (customer.usageCount >= customer.monthlyLimit) {
       this.logger.warn(
-        `Monthly quota exceeded for customer: ${customer.id} (${customer.usageCount}/${customer.monthlyLimit})`,
+        `Usage limit exceeded for customer: ${customer.email} (${customer.usageCount}/${customer.monthlyLimit})`,
       );
-
-      throw new HttpException(
-        {
-          statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          message: 'Monthly quota exceeded',
-          error: 'Quota Exceeded',
-          usage: customer.usageCount,
-          limit: customer.monthlyLimit,
-          resetAt: customer.usageResetAt,
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+      throw new ForbiddenException({
+        statusCode: 403,
+        message: `Monthly usage limit exceeded (${customer.usageCount}/${customer.monthlyLimit}). Upgrade your plan or wait for reset on ${customer.usageResetAt.toLocaleDateString()}.`,
+        error: 'Forbidden',
+      });
     }
+
+    await this.prisma.customer.update({
+      where: { id: customer.id },
+      data: {
+        usageCount: {
+          increment: 1,
+        },
+      },
+      select: {
+        usageCount: true,
+      },
+    });
 
     return true;
   }
@@ -70,7 +76,7 @@ export class QuotaGuard implements CanActivate {
   /**
    * Reset usage count for new billing period
    */
-  private async resetUsage(customerId: string): Promise<void> {
+  private async resetMonthlyUsage(customerId: string): Promise<void> {
     const nextResetDate = this.getNextResetDate();
 
     await this.prisma.customer.update({
@@ -80,16 +86,11 @@ export class QuotaGuard implements CanActivate {
         usageResetAt: nextResetDate,
       },
     });
-
-    this.logger.log(`Usage reset for customer: ${customerId}`);
   }
 
-  /**
-   * Calculate next reset date (1 month )
-   */
   private getNextResetDate(): Date {
     const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
   }
 
   /**
