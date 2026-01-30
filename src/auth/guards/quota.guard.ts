@@ -19,6 +19,7 @@ interface CustomerRequest extends Request {
     monthlyLimit: number;
     usageCount: number;
     usageResetAt: Date;
+    billingCycleStartAt: Date;
   };
 }
 
@@ -40,13 +41,24 @@ export class QuotaGuard implements CanActivate {
     }
 
     const now = new Date();
+
+    // Check if billing cycle has ended and needs reset
     if (customer.usageResetAt < now) {
-      await this.resetMonthlyUsage(customer.id);
+      const nextResetDate = this.getNextResetDate();
+
+      await this.resetMonthlyUsage(customer.id, nextResetDate);
+
+      // Update customer object in memory for current request
       customer.usageCount = 0;
-      customer.usageResetAt = this.getNextResetDate();
-      this.logger.log(`Reset monthly usage for customer: ${customer.email}`);
+      customer.usageResetAt = nextResetDate;
+      customer.billingCycleStartAt = now;
+
+      this.logger.log(
+        `Reset monthly usage for customer: ${customer.email}. New cycle: ${now.toISOString()} to ${nextResetDate.toISOString()}`,
+      );
     }
 
+    // Check if usage limit is exceeded
     if (customer.usageCount >= customer.monthlyLimit) {
       this.logger.warn(
         `Usage limit exceeded for customer: ${customer.email} (${customer.usageCount}/${customer.monthlyLimit})`,
@@ -58,6 +70,7 @@ export class QuotaGuard implements CanActivate {
       });
     }
 
+    // Increment usage count
     await this.prisma.customer.update({
       where: { id: customer.id },
       data: {
@@ -65,10 +78,14 @@ export class QuotaGuard implements CanActivate {
           increment: 1,
         },
       },
-      select: {
-        usageCount: true,
-      },
     });
+
+    // Update in-memory counter for accurate logging
+    customer.usageCount += 1;
+
+    this.logger.debug(
+      `Usage incremented for ${customer.email}: ${customer.usageCount}/${customer.monthlyLimit}`,
+    );
 
     return true;
   }
@@ -76,21 +93,30 @@ export class QuotaGuard implements CanActivate {
   /**
    * Reset usage count for new billing period
    */
-  private async resetMonthlyUsage(customerId: string): Promise<void> {
-    const nextResetDate = this.getNextResetDate();
+  private async resetMonthlyUsage(
+    customerId: string,
+    nextResetDate: Date,
+  ): Promise<void> {
+    const now = new Date();
 
     await this.prisma.customer.update({
       where: { id: customerId },
       data: {
         usageCount: 0,
         usageResetAt: nextResetDate,
+        billingCycleStartAt: now,
       },
     });
   }
 
+  /**
+   * Get the next reset date (first day of next month at midnight UTC)
+   */
   private getNextResetDate(): Date {
     const now = new Date();
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    return new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0),
+    );
   }
 
   /**
@@ -101,6 +127,7 @@ export class QuotaGuard implements CanActivate {
     limit: number;
     remaining: number;
     resetAt: Date;
+    billingCycleStartAt: Date;
     percentageUsed: number;
   }> {
     const customer = await this.prisma.customer.findUnique({
@@ -109,6 +136,7 @@ export class QuotaGuard implements CanActivate {
         usageCount: true,
         monthlyLimit: true,
         usageResetAt: true,
+        billingCycleStartAt: true,
       },
     });
 
@@ -124,6 +152,7 @@ export class QuotaGuard implements CanActivate {
       limit: customer.monthlyLimit,
       remaining,
       resetAt: customer.usageResetAt,
+      billingCycleStartAt: customer.billingCycleStartAt,
       percentageUsed: Math.round(percentageUsed * 100) / 100,
     };
   }

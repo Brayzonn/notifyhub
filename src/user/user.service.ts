@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@/prisma/prisma.service';
 import { RedisService } from '@/redis/redis.service';
 import { EmailService } from '@/email/email.service';
-import { AuthProvider } from '@prisma/client';
+import { AuthProvider, JobStatus } from '@prisma/client';
 import {
   UpdateProfileDto,
   ChangePasswordDto,
@@ -16,6 +16,23 @@ import {
 } from '@/user/dto';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
+import {
+  UsageStats,
+  CustomerProfile,
+  UserProfile,
+  MessageResponse,
+  EmailChangeRequestResponse,
+  EmailVerificationResponse,
+  EmailChangeSuccessResponse,
+  DashboardUsage,
+  DashboardJobs,
+  DashboardSummary,
+  ApiKeyResponse,
+  RegenerateApiKeyResponse,
+  Job,
+  JobsHistoryResponse,
+  JobDeliveryLog,
+} from './interfaces/user.interface';
 
 @Injectable()
 export class UserService {
@@ -35,7 +52,7 @@ export class UserService {
   /**
    * Get user profile with customer data
    */
-  async getUserProfile(userId: string) {
+  async getUserProfile(userId: string): Promise<UserProfile> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
@@ -46,6 +63,7 @@ export class UserService {
             monthlyLimit: true,
             usageCount: true,
             usageResetAt: true,
+            billingCycleStartAt: true,
             isActive: true,
             createdAt: true,
             sendingDomain: true,
@@ -66,16 +84,36 @@ export class UserService {
   /**
    * Update user profile (name, company)
    */
-  async updateProfile(userId: string, dto: UpdateProfileDto) {
+  async updateProfile(
+    userId: string,
+    dto: UpdateProfileDto,
+  ): Promise<UserProfile> {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: {
         ...(dto.name && { name: dto.name }),
         ...(dto.company && { company: dto.company }),
       },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            plan: true,
+            monthlyLimit: true,
+            usageCount: true,
+            usageResetAt: true,
+            isActive: true,
+            createdAt: true,
+            sendingDomain: true,
+            domainVerified: true,
+          },
+        },
+      },
     });
 
-    const { password, ...userWithoutPassword } = user;
+    const { password, ...userWithoutPassword } = user as UserProfile & {
+      password?: string;
+    };
     return userWithoutPassword;
   }
 
@@ -88,7 +126,10 @@ export class UserService {
   /**
    * Change password (only for email auth users)
    */
-  async changePassword(userId: string, dto: ChangePasswordDto) {
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+  ): Promise<MessageResponse> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
@@ -129,7 +170,10 @@ export class UserService {
   /**
    * Request email change
    */
-  async requestEmailChange(userId: string, dto: UpdateEmailDto) {
+  async requestEmailChange(
+    userId: string,
+    dto: UpdateEmailDto,
+  ): Promise<EmailChangeRequestResponse> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
@@ -212,7 +256,7 @@ export class UserService {
   /**
    * Verify new email (user clicks link from new email)
    */
-  async verifyNewEmail(token: string) {
+  async verifyNewEmail(token: string): Promise<EmailVerificationResponse> {
     const userId = await this.redis.get(`token:${token}`);
 
     if (!userId) {
@@ -247,7 +291,7 @@ export class UserService {
   /**
    * Confirm from old email (user clicks link from old email)
    */
-  async confirmOldEmail(token: string) {
+  async confirmOldEmail(token: string): Promise<EmailVerificationResponse> {
     const userId = await this.redis.get(`token:${token}`);
 
     if (!userId) {
@@ -282,7 +326,7 @@ export class UserService {
   /**
    * Cancel email change
    */
-  async cancelEmailChange(token: string) {
+  async cancelEmailChange(token: string): Promise<MessageResponse> {
     const userId = await this.redis.get(`token:${token}`);
 
     if (!userId) {
@@ -318,7 +362,9 @@ export class UserService {
   /**
    * Complete email change
    */
-  private async completeEmailChange(userId: string) {
+  private async completeEmailChange(
+    userId: string,
+  ): Promise<EmailChangeSuccessResponse> {
     const dataStr = await this.redis.get(`email-change:${userId}`);
 
     if (!dataStr) {
@@ -357,7 +403,10 @@ export class UserService {
   /**
    * Delete account (soft delete)
    */
-  async deleteAccount(userId: string, confirmEmail: string) {
+  async deleteAccount(
+    userId: string,
+    confirmEmail: string,
+  ): Promise<MessageResponse> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
@@ -400,7 +449,7 @@ export class UserService {
   /**
    * Get dashboard summary
    */
-  async getDashboardSummary(userId: string) {
+  async getDashboardSummary(userId: string): Promise<DashboardSummary> {
     const customer = await this.prisma.customer.findUnique({
       where: { userId },
       select: {
@@ -469,7 +518,7 @@ export class UserService {
   /**
    * Get user's API key (masked)
    */
-  async getApiKey(userId: string) {
+  async getApiKey(userId: string): Promise<ApiKeyResponse> {
     const customer = await this.prisma.customer.findUnique({
       where: { userId },
       select: {
@@ -514,7 +563,11 @@ export class UserService {
   /**
    * Regenerate API key
    */
-  async regenerateApiKey(userId: string, email: string, confirmEmail: string) {
+  async regenerateApiKey(
+    userId: string,
+    email: string,
+    confirmEmail: string,
+  ): Promise<RegenerateApiKeyResponse> {
     if (email !== confirmEmail) {
       throw new BadRequestException('Confirmation email does not match');
     }
@@ -559,7 +612,7 @@ export class UserService {
   /**
    * Get usage statistics
    */
-  async getUsageStats(userId: string) {
+  async getUsageStats(userId: string): Promise<UsageStats> {
     const customer = await this.prisma.customer.findUnique({
       where: { userId },
       select: {
@@ -567,6 +620,7 @@ export class UserService {
         monthlyLimit: true,
         usageCount: true,
         usageResetAt: true,
+        billingCycleStartAt: true,
       },
     });
 
@@ -576,14 +630,18 @@ export class UserService {
 
     const usagePercentage = (customer.usageCount / customer.monthlyLimit) * 100;
     const remaining = customer.monthlyLimit - customer.usageCount;
+    const formattedPercentage = parseFloat(
+      Math.min(usagePercentage, 100).toFixed(2),
+    ).toString();
 
     return {
       plan: customer.plan,
       monthlyLimit: customer.monthlyLimit,
       usageCount: customer.usageCount,
       remaining: remaining > 0 ? remaining : 0,
-      usagePercentage: Math.min(usagePercentage, 100).toFixed(2),
+      usagePercentage: formattedPercentage,
       usageResetAt: customer.usageResetAt,
+      billingCycleStartAt: customer.billingCycleStartAt,
     };
   }
 
@@ -600,8 +658,8 @@ export class UserService {
     userId: string,
     page: number = 1,
     limit: number = 20,
-    status?: string,
-  ) {
+    status?: JobStatus,
+  ): Promise<JobsHistoryResponse> {
     const customer = await this.prisma.customer.findUnique({
       where: { userId },
       select: { id: true },
@@ -648,7 +706,7 @@ export class UserService {
   /**
    * Get single job details
    */
-  async getJobDetails(userId: string, jobId: string) {
+  async getJobDetails(userId: string, jobId: string): Promise<Job> {
     const customer = await this.prisma.customer.findUnique({
       where: { userId },
       select: { id: true },

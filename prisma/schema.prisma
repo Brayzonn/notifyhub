@@ -99,12 +99,13 @@ model Customer {
   id            String       @id @default(uuid()) @db.Uuid
   userId        String       @unique @map("user_id") @db.Uuid
   email         String       @unique
-  apiKey        String?       @unique @map("api_key")
-  apiKeyHash    String?       @unique @map("api_key_hash")
+  apiKey        String?      @unique @map("api_key")
+  apiKeyHash    String?      @unique @map("api_key_hash")
   plan          CustomerPlan @default(FREE)              
   monthlyLimit  Int          @default(1000) @map("monthly_limit")
   usageCount    Int          @default(0) @map("usage_count")
   usageResetAt  DateTime     @default(now()) @map("usage_reset_at")
+  billingCycleStartAt DateTime @default(now()) @map("billing_cycle_start_at") 
   isActive      Boolean      @default(true) @map("is_active")
   createdAt     DateTime     @default(now()) @map("created_at")
   updatedAt     DateTime     @updatedAt @map("updated_at")
@@ -117,7 +118,7 @@ model Customer {
   domainVerifiedAt  DateTime? @map("domain_verified_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  jobs          Job[]
+  jobs Job[]
 
   @@index([apiKeyHash])
   @@index([email])

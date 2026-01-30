@@ -18,6 +18,7 @@ export interface AuthenticatedCustomer {
   monthlyLimit: number;
   usageCount?: number;
   usageResetAt: Date;
+  billingCycleStartAt: Date;
 }
 
 declare global {
@@ -67,6 +68,7 @@ export class ApiKeyGuard implements CanActivate {
         monthlyLimit: true,
         usageCount: true,
         usageResetAt: true,
+        billingCycleStartAt: true,
         isActive: true,
         user: {
           select: {
@@ -113,8 +115,12 @@ export class ApiKeyGuard implements CanActivate {
       email: customer.email,
       plan: customer.plan,
       monthlyLimit: customer.monthlyLimit,
+      usageCount: customer.usageCount,
       usageResetAt: customer.usageResetAt,
+      billingCycleStartAt: customer.billingCycleStartAt,
     };
+
+    this.logger.debug(`API key authenticated: ${customer.email}`);
 
     return true;
   }
