@@ -17,7 +17,13 @@ import {
   ResendOtpDto,
   JwtPayload,
 } from '@/auth/dto/auth.dto';
-import { User, AuthProvider, Customer, CustomerPlan } from '@prisma/client';
+import {
+  User,
+  AuthProvider,
+  Customer,
+  CustomerPlan,
+  SubscriptionStatus,
+} from '@prisma/client';
 import {
   AuthResponse,
   AuthTokens,
@@ -345,10 +351,116 @@ export class AuthService {
    */
 
   /**
-   * ═══════════════════════════════
-   * REFRESH TOKEN HELPERS
-   * ═══════════════════════════════
+   * downgrade customer to free plan
    */
+  async downgradeToFreePlan(
+    customerId: string,
+    reason: 'SUBSCRIPTION_EXPIRED' | 'PAYMENT_FAILED',
+  ): Promise<void> {
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { plan: true, email: true },
+    });
+
+    if (!customer) {
+      throw new Error('Customer not found');
+    }
+
+    const originalPlan = customer.plan;
+    const now = new Date();
+
+    const resetDate = new Date(now);
+    resetDate.setDate(resetDate.getDate() + 30);
+
+    await this.prisma.customer.update({
+      where: { id: customerId },
+      data: {
+        plan: CustomerPlan.FREE,
+        monthlyLimit: getPlanLimit(CustomerPlan.FREE),
+        usageCount: 0,
+        usageResetAt: resetDate,
+        billingCycleStartAt: now,
+        previousPlan: originalPlan,
+        downgradedAt: now,
+        subscriptionStatus: SubscriptionStatus.EXPIRED,
+      },
+    });
+
+    //do later-------send user downgrade email--------------------------------------
+
+    this.logger.warn(
+      `Customer ${customer.email} downgraded from ${originalPlan} to FREE. Next reset: ${resetDate.toISOString()}`,
+    );
+  }
+
+  /**
+   * Reset customer usage for new billing cycle
+   */
+  async resetMonthlyUsage(customerId: string): Promise<void> {
+    const resetDate = new Date();
+    resetDate.setDate(resetDate.getDate() + 30); // 30 days from now
+
+    await this.prisma.customer.update({
+      where: { id: customerId },
+      data: {
+        usageCount: 0,
+        usageResetAt: resetDate,
+        billingCycleStartAt: new Date(),
+      },
+    });
+
+    this.logger.log(
+      `Reset usage for customer ${customerId}. Next reset: ${resetDate.toISOString()}`,
+    );
+  }
+
+  /**
+   * Get usage stats for a customer
+   */
+  async getUsageStats(customerId: string): Promise<{
+    usage: number;
+    limit: number;
+    remaining: number;
+    resetAt: Date;
+    billingCycleStartAt: Date;
+    percentageUsed: number;
+  }> {
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: {
+        usageCount: true,
+        monthlyLimit: true,
+        usageResetAt: true,
+        billingCycleStartAt: true,
+      },
+    });
+
+    if (!customer) {
+      throw new Error('Customer not found');
+    }
+
+    const remaining = Math.max(0, customer.monthlyLimit - customer.usageCount);
+    const percentageUsed = (customer.usageCount / customer.monthlyLimit) * 100;
+
+    return {
+      usage: customer.usageCount,
+      limit: customer.monthlyLimit,
+      remaining,
+      resetAt: customer.usageResetAt,
+      billingCycleStartAt: customer.billingCycleStartAt,
+      percentageUsed: Math.round(percentageUsed * 100) / 100,
+    };
+  }
+
+  /**
+   * Increment usage counter
+   */
+  async incrementUsage(customerId: string): Promise<void> {
+    await this.prisma.customer.update({
+      where: { id: customerId },
+      data: { usageCount: { increment: 1 } },
+    });
+  }
 
   /**
    * Validate and retrieve stored refresh token
