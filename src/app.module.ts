@@ -8,7 +8,6 @@ import { HealthModule } from '@/health/health.module';
 import { RedisModule } from '@/redis/redis.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { QueueModule } from './queues/queue.module';
-import { CustomersModule } from './customers/customers.module';
 import { AuthModule } from './auth/auth.module';
 import { EmailModule } from './email/email.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
@@ -28,7 +27,6 @@ import { UserModule } from './user/user.module';
     QueueModule,
     NotificationsModule,
     HealthModule,
-    CustomersModule,
   ],
   controllers: [AppController],
   providers: [
