@@ -12,8 +12,8 @@ datasource db {
 // ============================================
 
 enum UserRole {
-  ADMIN 
-  USER 
+  ADMIN
+  USER
 }
 
 enum AuthProvider {
@@ -26,6 +26,22 @@ enum CustomerPlan {
   FREE
   INDIE
   STARTUP
+}
+
+enum PaymentProvider {
+  STRIPE
+  PADDLE
+  PAYSTACK
+  FLUTTERWAVE
+  LEMONSQUEEZY
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+  TRIALING
 }
 
 enum JobType {
@@ -49,29 +65,28 @@ enum DeliveryStatus {
 // USER MODEL 
 // ============================================
 model User {
-  id            String        @id @default(uuid()) @db.Uuid
-  email         String        @unique
+  id            String       @id @default(uuid()) @db.Uuid
+  email         String       @unique
   password      String?
   name          String
   company       String?
   avatar        String?
-  role          UserRole      @default(USER)
-  provider      AuthProvider  @default(EMAIL) 
-  providerId    String?       @map("provider_id")
-  emailVerified Boolean       @default(false) @map("email_verified")
-  deletedAt     DateTime?     @map("deleted_at") 
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
+  role          UserRole     @default(USER)
+  provider      AuthProvider @default(EMAIL)
+  providerId    String?      @map("provider_id")
+  emailVerified Boolean      @default(false) @map("email_verified")
+  deletedAt     DateTime?    @map("deleted_at")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
 
   refreshTokens RefreshToken[]
-  customer      Customer? 
+  customer      Customer?
 
   @@unique([provider, providerId])
   @@index([email])
-  @@index([deletedAt]) 
+  @@index([deletedAt])
   @@map("users")
 }
-
 
 // ============================================
 // TOKEN MODELS
@@ -90,66 +105,79 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
-
 // ============================================
 // CUSTOMER MODEL 
 // ============================================
 
 model Customer {
-  id            String       @id @default(uuid()) @db.Uuid
-  userId        String       @unique @map("user_id") @db.Uuid
-  email         String       @unique
-  apiKey        String?      @unique @map("api_key")
-  apiKeyHash    String?      @unique @map("api_key_hash")
-  plan          CustomerPlan @default(FREE)              
-  monthlyLimit  Int          @default(1000) @map("monthly_limit")
-  usageCount    Int          @default(0) @map("usage_count")
-  usageResetAt  DateTime     @default(now()) @map("usage_reset_at")
-  billingCycleStartAt DateTime @default(now()) @map("billing_cycle_start_at") 
-  isActive      Boolean      @default(true) @map("is_active")
-  createdAt     DateTime     @default(now()) @map("created_at")
-  updatedAt     DateTime     @updatedAt @map("updated_at")
+  id                  String       @id @default(uuid()) @db.Uuid
+  userId              String       @unique @map("user_id") @db.Uuid
+  email               String       @unique
+  apiKey              String?      @unique @map("api_key")
+  apiKeyHash          String?      @unique @map("api_key_hash")
+  plan                CustomerPlan @default(FREE)
+  monthlyLimit        Int          @default(1000) @map("monthly_limit")
+  usageCount          Int          @default(0) @map("usage_count")
+  usageResetAt        DateTime     @default(now()) @map("usage_reset_at")
+  billingCycleStartAt DateTime     @default(now()) @map("billing_cycle_start_at")
+  isActive            Boolean      @default(true) @map("is_active")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
 
-  sendingDomain     String?   @map("sending_domain")         
+  subscriptionStatus     SubscriptionStatus? @map("subscription_status")
+  paymentProvider        PaymentProvider?    @map("payment_provider")
+  providerCustomerId     String?             @map("provider_customer_id")
+  providerSubscriptionId String?             @map("provider_subscription_id")
+  subscriptionEndDate    DateTime?           @map("subscription_end_date")
+  lastPaymentDate        DateTime?           @map("last_payment_date")
+  nextBillingDate        DateTime?           @map("next_billing_date")
+  paymentMetadata        Json?               @map("payment_metadata")
+
+  previousPlan CustomerPlan? @map("previous_plan")
+  downgradedAt DateTime?     @map("downgraded_at")
+
+  sendingDomain     String?   @map("sending_domain")
   domainVerified    Boolean   @default(false) @map("domain_verified")
   sendgridDomainId  String?   @unique @map("sendgrid_domain_id")
-  domainDnsRecords  Json?     @map("domain_dns_records")    
+  domainDnsRecords  Json?     @map("domain_dns_records")
   domainRequestedAt DateTime? @map("domain_requested_at")
   domainVerifiedAt  DateTime? @map("domain_verified_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   jobs Job[]
 
   @@index([apiKeyHash])
   @@index([email])
   @@index([userId])
+  @@index([subscriptionStatus])
+  @@index([providerSubscriptionId])
+  @@index([paymentProvider])
   @@map("customers")
 }
-
 
 // ============================================
 // JOB MODEL
 // ============================================
 model Job {
-  id              String    @id @default(uuid()) @db.Uuid
-  customerId      String    @map("customer_id") @db.Uuid
-  type            JobType   
-  status          JobStatus @default(PENDING)   
-  priority        Int       @default(5)
-  payload         Json
-  attempts        Int       @default(0)
-  maxAttempts     Int       @default(3) @map("max_attempts")
-  errorMessage    String?   @map("error_message")
-  idempotencyKey  String?   @map("idempotency_key")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-  startedAt       DateTime? @map("started_at")
-  completedAt     DateTime? @map("completed_at")
+  id             String    @id @default(uuid()) @db.Uuid
+  customerId     String    @map("customer_id") @db.Uuid
+  type           JobType
+  status         JobStatus @default(PENDING)
+  priority       Int       @default(5)
+  payload        Json
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(3) @map("max_attempts")
+  errorMessage   String?   @map("error_message")
+  idempotencyKey String?   @map("idempotency_key")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  startedAt      DateTime? @map("started_at")
+  completedAt    DateTime? @map("completed_at")
 
-  customer        Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  deliveryLogs    DeliveryLog[]
+  customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  deliveryLogs DeliveryLog[]
 
-  @@unique([customerId, idempotencyKey])  
+  @@unique([customerId, idempotencyKey])
   @@index([customerId])
   @@index([status])
   @@index([type])
@@ -165,12 +193,12 @@ model DeliveryLog {
   id           String         @id @default(uuid()) @db.Uuid
   jobId        String         @map("job_id") @db.Uuid
   attempt      Int
-  status       DeliveryStatus 
+  status       DeliveryStatus
   response     Json?
   errorMessage String?        @map("error_message")
   createdAt    DateTime       @default(now()) @map("created_at")
 
-  job          Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@index([jobId])
   @@index([createdAt(sort: Desc)])
