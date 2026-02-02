@@ -3,7 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ApiKeyGuard } from './guards/api-key.guard';
 import { CustomerRateLimitGuard } from './guards/customer-rate-limit.guard';
-import { QuotaGuard } from './guards/quota.guard';
+import { QuotaGuard } from './guards/api-quota.guard';
 import { RedisModule } from '@/redis/redis.module';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtStrategy } from './strategies/jwt.strategy';
