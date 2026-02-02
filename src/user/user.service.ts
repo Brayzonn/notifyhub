@@ -18,20 +18,16 @@ import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import {
   UsageStats,
-  CustomerProfile,
   UserProfile,
   MessageResponse,
   EmailChangeRequestResponse,
   EmailVerificationResponse,
   EmailChangeSuccessResponse,
-  DashboardUsage,
-  DashboardJobs,
   DashboardSummary,
   ApiKeyResponse,
   RegenerateApiKeyResponse,
   Job,
   JobsHistoryResponse,
-  JobDeliveryLog,
 } from './interfaces/user.interface';
 
 @Injectable()
