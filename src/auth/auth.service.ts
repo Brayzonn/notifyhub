@@ -26,6 +26,7 @@ import {
 } from '@/auth/interfaces/auth.interface';
 import { RedisService } from '@/redis/redis.service';
 import { EmailService } from '@/email/email.service';
+import { getPlanLimit } from '@/common/constants/plans.constants';
 
 @Injectable()
 export class AuthService {
@@ -508,7 +509,7 @@ export class AuthService {
         apiKey: '',
         apiKeyHash: '',
         plan: CustomerPlan.FREE,
-        monthlyLimit: 1000,
+        monthlyLimit: getPlanLimit(CustomerPlan.FREE),
         usageCount: 0,
         usageResetAt: new Date(),
         isActive: true,
