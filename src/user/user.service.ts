@@ -37,6 +37,7 @@ import {
   JobsHistoryResponse,
 } from './interfaces/user.interface';
 import { SendGridDomainService } from '@/sendgrid/sendgrid-domain.service';
+import { NotificationsService } from '@/notifications/notifications.service';
 
 @Injectable()
 export class UserService {
@@ -44,6 +45,7 @@ export class UserService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
     private readonly sendGridDomainService: SendGridDomainService,
     private readonly redis: RedisService,
     private readonly emailService: EmailService,
@@ -745,6 +747,27 @@ export class UserService {
     }
 
     return job;
+  }
+
+  async retryJob(userId: string, jobId: string) {
+    const customer = await this.prisma.customer.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (!customer) {
+      throw new NotFoundException('Customer record not found');
+    }
+
+    const result = await this.notificationsService.retryJob(customer.id, jobId);
+
+    if (!result) {
+      throw new NotFoundException(
+        'Job not found or cannot be retried (must be in failed status)',
+      );
+    }
+
+    return result;
   }
 
   /**
