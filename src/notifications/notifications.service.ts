@@ -271,7 +271,6 @@ export class NotificationsService {
       where: { id: jobId },
       data: {
         status: JobStatus.PENDING,
-        attempts: 0,
         errorMessage: null,
       },
     });
@@ -288,6 +287,7 @@ export class NotificationsService {
           from: payload.from,
         },
         job.priority,
+        true,
       );
     } else if (job.type === JobType.WEBHOOK) {
       const payload = job.payload as WebhookPayloadData;
@@ -301,6 +301,7 @@ export class NotificationsService {
           payload: payload.payload,
         },
         job.priority,
+        true,
       );
     }
 
