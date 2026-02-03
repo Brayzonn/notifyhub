@@ -173,6 +173,7 @@ export class UserController {
       query.page,
       query.limit,
       query.status,
+      query.type,
     );
   }
 
@@ -182,6 +183,11 @@ export class UserController {
     @Param('id') jobId: string,
   ) {
     return await this.userService.getJobDetails(user.id, jobId);
+  }
+
+  @Post('jobs/:id/retry')
+  async retryJob(@User() user: AuthenticatedUser, @Param('id') jobId: string) {
+    return await this.userService.retryJob(user.id, jobId);
   }
 
   /**
