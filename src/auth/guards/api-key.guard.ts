@@ -66,9 +66,6 @@ export class ApiKeyGuard implements CanActivate {
     });
 
     if (!customer) {
-      this.logger.warn(
-        `Invalid API key attempt: ${apiKey.substring(0, 11)}...`,
-      );
       throw new UnauthorizedException({
         statusCode: 401,
         message: 'Invalid API key',
@@ -77,7 +74,6 @@ export class ApiKeyGuard implements CanActivate {
     }
 
     if (customer.user?.deletedAt) {
-      this.logger.warn(`Deleted user attempted API access: ${customer.email}`);
       throw new ForbiddenException({
         statusCode: 403,
         message: 'Account has been deleted',
@@ -86,9 +82,6 @@ export class ApiKeyGuard implements CanActivate {
     }
 
     if (!customer.isActive) {
-      this.logger.warn(
-        `Inactive customer attempted API access: ${customer.email}`,
-      );
       throw new ForbiddenException({
         statusCode: 403,
         message: 'Account is inactive',
@@ -110,8 +103,6 @@ export class ApiKeyGuard implements CanActivate {
       providerSubscriptionId: customer.providerSubscriptionId ?? undefined,
       subscriptionEndDate: customer.subscriptionEndDate ?? undefined,
     };
-
-    this.logger.debug(`API key authenticated: ${customer.email}`);
 
     return true;
   }
