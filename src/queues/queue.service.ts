@@ -45,10 +45,11 @@ export class QueueService {
   async addEmailJob(
     data: EmailJobData,
     priority: number = QUEUE_PRIORITIES.NORMAL,
+    isRetry: boolean = false,
   ) {
     try {
       const job = await this.emailQueue.add(JOB_NAMES.SEND_EMAIL, data, {
-        jobId: data.jobId,
+        jobId: isRetry ? undefined : data.jobId,
         priority,
         attempts: 3,
         backoff: {
@@ -73,10 +74,11 @@ export class QueueService {
   async addWebhookJob(
     data: WebhookJobData,
     priority: number = QUEUE_PRIORITIES.NORMAL,
+    isRetry: boolean = false,
   ) {
     try {
       const job = await this.webhookQueue.add(JOB_NAMES.SEND_WEBHOOK, data, {
-        jobId: data.jobId,
+        jobId: isRetry ? undefined : data.jobId,
         priority,
         attempts: 3,
         backoff: {
