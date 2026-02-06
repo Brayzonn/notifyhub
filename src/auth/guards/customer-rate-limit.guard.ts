@@ -9,6 +9,8 @@ import {
 import { Request } from 'express';
 import { RedisService } from '../../redis/redis.service';
 import { AuthenticatedCustomer } from '../interfaces/api-guard.interface';
+import { PLAN_LIMITS } from '@/common/constants/plans.constants';
+import { CustomerPlan } from '@prisma/client';
 
 interface CustomerRequest extends Request {
   customer: AuthenticatedCustomer;
@@ -17,12 +19,6 @@ interface CustomerRequest extends Request {
 @Injectable()
 export class CustomerRateLimitGuard implements CanActivate {
   private readonly logger = new Logger(CustomerRateLimitGuard.name);
-
-  private readonly rateLimits = {
-    free: 10,
-    indie: 100,
-    startup: 500,
-  };
 
   constructor(private readonly redis: RedisService) {}
 
@@ -38,12 +34,11 @@ export class CustomerRateLimitGuard implements CanActivate {
     }
 
     const { id: customerId, plan } = customer;
-    const planKey = plan.toLowerCase();
+    const limit = PLAN_LIMITS[plan].rateLimit;
 
-    const isAllowed = await this.checkRateLimit(customerId, planKey);
+    const isAllowed = await this.checkRateLimit(customerId, limit);
 
     if (!isAllowed) {
-      const limit = this.rateLimits[planKey] || this.rateLimits.free;
       this.logger.warn(`Rate limit exceeded for customer: ${customerId}`);
 
       throw new HttpException(
@@ -61,16 +56,12 @@ export class CustomerRateLimitGuard implements CanActivate {
     return true;
   }
 
-  /**
-   * Check and increment rate limit counter
-   */
   private async checkRateLimit(
     customerId: string,
-    planKey: string,
+    limit: number,
   ): Promise<boolean> {
     const key = `rate_limit:${customerId}:minute`;
-    const limit = this.rateLimits[planKey] || this.rateLimits.free;
-    const ttl = 60; // 1 minute
+    const ttl = 60;
 
     try {
       const currentCount = await this.redis.get(key);
@@ -94,22 +85,17 @@ export class CustomerRateLimitGuard implements CanActivate {
     }
   }
 
-  /**
-   * Get remaining requests for a customer
-   */
   async getRemainingRequests(
     customerId: string,
-    plan: string,
+    plan: CustomerPlan,
   ): Promise<{ remaining: number; limit: number; resetIn: number }> {
     const key = `rate_limit:${customerId}:minute`;
-    const planKey = plan.toLowerCase();
-    const limit = this.rateLimits[planKey] || this.rateLimits.free;
+    const limit = PLAN_LIMITS[plan].rateLimit;
 
     const currentCount = await this.redis.get(key);
     const count = currentCount ? parseInt(currentCount, 10) : 0;
     const remaining = Math.max(0, limit - count);
 
-    // Get TTL
     const client = this.redis.getClient();
     const ttl = await client.ttl(key);
     const resetIn = ttl > 0 ? ttl : 60;
